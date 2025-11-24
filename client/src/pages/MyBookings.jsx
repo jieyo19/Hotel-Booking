@@ -1,4 +1,7 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
+import { useAuth } from '@clerk/clerk-react'
+import { useAppContext } from '../context/AppContext'
+import { toast } from 'react-hot-toast'
 import Title from '../components/Title'
 
 const bookingsData = [
@@ -41,20 +44,125 @@ const bookingsData = [
 ]
 
 const MyBookings = () => {
+  const { axios } = useAppContext()
+  const { getToken, isSignedIn } = useAuth()
+  const [bookings, setBookings] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  // Format date to readable string
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A'
+    const date = new Date(dateString)
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    })
+  }
+
+  // Transform API booking data to match display format
+  const transformBooking = (booking) => {
+    return {
+      id: booking._id,
+      hotel: booking.hotel?.name || 'Unknown Hotel',
+      roomType: booking.room?.roomType || 'Unknown Room',
+      address: booking.hotel?.address || 'Address not available',
+      guests: booking.guests || 1,
+      total: booking.totalPrice || 0,
+      checkIn: formatDate(booking.checkInDate),
+      checkOut: formatDate(booking.checkOutDate),
+      status: booking.isPaid ? 'Paid' : 'Unpaid',
+      image: booking.room?.images?.[0] || booking.hotel?.image || 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=300&h=200&fit=crop',
+      bookingStatus: booking.status || 'pending',
+      bookingId: booking._id
+    }
+  }
+
+  // Fetch user bookings from API
+  const fetchBookings = async () => {
+    if (!isSignedIn) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    
+    try {
+      const token = await getToken()
+      const response = await axios.get('/api/bookings/user', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      })
+
+      if (response.data?.success && response.data.bookings) {
+        const transformedBookings = response.data.bookings.map(transformBooking)
+        setBookings(transformedBookings)
+      } else {
+        throw new Error(response.data?.message || 'Failed to load bookings')
+      }
+    } catch (err) {
+      console.error('Error fetching bookings:', err)
+      const errorMsg = err.response?.data?.message || err.message || 'Failed to load bookings'
+      setError(errorMsg)
+      // Only use dummy data if we have an error AND no bookings yet
+      if (bookings.length === 0) {
+        setBookings([]) // Keep empty, don't use dummy data
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchBookings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn])
+
+  // Use fetched bookings
+  const displayBookings = bookings
   return (
     <div className='py-28 md:pb-35 md:pt-32 px-4 md:px-16 lg:px-24 xl:px-32'>
 
       <Title title='My Bookings' subTitle='Easily manage your past, current, and upcoming hotel reservations in one place. Plan your trips seamlessly with just a few clicks' align='left' />
 
       <div className='max-w-6xl mt-8 w-full text-gray-800'>
-
-        <div className='hidden md:grid md:grid-cols-[3fr_2fr_1fr] w-full border-b border-gray-300 font-medium text-base py-3'>
-          <div>Hotels</div>
-          <div>Date & Timings</div>
-          <div>Payment</div>
+        {/* Refresh button */}
+        <div className='flex justify-end mb-4'>
+          <button
+            onClick={fetchBookings}
+            disabled={loading}
+            className='text-sm bg-gray-100 px-4 py-2 rounded-md border border-gray-200 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+          >
+            {loading ? 'Loading...' : 'Refresh'}
+          </button>
         </div>
 
-        {bookingsData.map((booking) => (
+        {error && !loading && (
+          <div className='text-red-500 text-sm mb-4 bg-red-50 p-3 rounded'>
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className='text-center py-8 text-gray-500'>
+            Loading your bookings...
+          </div>
+        ) : displayBookings.length === 0 ? (
+          <div className='text-center py-8 text-gray-500'>
+            <p className='text-lg mb-2'>No bookings found.</p>
+            <p className='text-sm'>Start by booking a room from the rooms page!</p>
+          </div>
+        ) : (
+          <>
+            <div className='hidden md:grid md:grid-cols-[3fr_2fr_1fr] w-full border-b border-gray-300 font-medium text-base py-3'>
+              <div>Hotels</div>
+              <div>Date & Timings</div>
+              <div>Payment</div>
+            </div>
+
+            {displayBookings.map((booking) => (
           <div key={booking.id} className='grid grid-cols-1 md:grid-cols-[3fr_2fr_1fr] w-full border-b border-gray-300 py-6 gap-4 items-center'>
             
             {/* Hotel Info */}
@@ -113,7 +221,9 @@ const MyBookings = () => {
             </div>
 
           </div>
-        ))}
+            ))}
+          </>
+        )}
 
       </div>
     </div>

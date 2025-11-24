@@ -1,19 +1,195 @@
 import React, { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { roomsDummyData } from '../assets/assets'
+import { useAppContext } from '../context/AppContext'
+import { toast } from 'react-hot-toast'
 import StarRating from '../components/StarRating'
 import { assets } from '../assets/assets'
+import { useAuth } from '@clerk/clerk-react'
 
 const RoomDetails = () => {
   const {id} = useParams()
+  const navigate = useNavigate()
+  const { axios } = useAppContext()
+  const { getToken, isSignedIn } = useAuth()
   const [room, setRoom] = useState(null)
   const [mainImage, setMainImage] = useState(null)
+  const [guestCount, setGuestCount] = useState(1)
+  const [checkIn, setCheckIn] = useState('')
+  const [checkOut, setCheckOut] = useState('')
+  const [checkingAvailability, setCheckingAvailability] = useState(false)
+  const [isAvailable, setIsAvailable] = useState(null)
+  const [booking, setBooking] = useState(false)
 
   useEffect(() => {
-    const room = roomsDummyData.find(room => room._id === id)
-    room && setRoom(room)
-    room && setMainImage(room.images[0])
-  }, [id])
+    const fetchRoom = async () => {
+      try {
+        // Try to fetch from API first
+        const response = await axios.get(`/api/rooms/${id}`)
+        if (response.data?.success && response.data.room) {
+          setRoom(response.data.room)
+          setMainImage(response.data.room.images?.[0])
+        } else {
+          // Fallback to dummy data
+          const room = roomsDummyData.find(room => room._id === id)
+          if (room) {
+            setRoom(room)
+            setMainImage(room.images[0])
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching room:', error)
+        // Fallback to dummy data
+        const room = roomsDummyData.find(room => room._id === id)
+        if (room) {
+          setRoom(room)
+          setMainImage(room.images[0])
+        }
+      }
+    }
+    fetchRoom()
+  }, [id, axios])
+
+  // Check availability function
+  const handleCheckAvailability = async (e) => {
+    e?.preventDefault() // Prevent form submission if called from form
+    
+    if (!checkIn || !checkOut) {
+      toast.error('Please select both check-in and check-out dates')
+      return
+    }
+
+    const checkInDate = new Date(checkIn)
+    const checkOutDate = new Date(checkOut)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    if (checkInDate < today) {
+      toast.error('Check-in date cannot be in the past')
+      return
+    }
+
+    if (checkOutDate <= checkInDate) {
+      toast.error('Check-out date must be after check-in date')
+      return
+    }
+
+    setCheckingAvailability(true)
+    setIsAvailable(null)
+
+    try {
+      const response = await axios.post('/api/bookings/check-availability', {
+        room: id,
+        checkInDate: checkIn,
+        checkOutDate: checkOut
+      })
+
+      if (response.data?.success) {
+        setIsAvailable(response.data.isAvailable)
+        if (response.data.isAvailable) {
+          toast.success('Room is available for these dates!')
+        } else {
+          toast.error('Room is not available for these dates')
+        }
+      } else {
+        const errorMsg = response.data?.message || 'Failed to check availability'
+        toast.error(errorMsg)
+        setIsAvailable(false)
+      }
+    } catch (error) {
+      console.error('Error checking availability:', error)
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to check availability. Please try again.'
+      toast.error(errorMsg)
+      setIsAvailable(false)
+    } finally {
+      setCheckingAvailability(false)
+    }
+  }
+
+  // Book Now function
+  const handleBookNow = async () => {
+    // Check if user is signed in
+    if (!isSignedIn) {
+      toast.error('Please sign in to book a room')
+      return
+    }
+
+    // Validate required fields
+    if (!checkIn || !checkOut) {
+      toast.error('Please select both check-in and check-out dates')
+      return
+    }
+
+    if (isAvailable === null) {
+      toast.error('Please check availability first')
+      return
+    }
+
+    if (!isAvailable) {
+      toast.error('Room is not available for the selected dates')
+      return
+    }
+
+    const checkInDate = new Date(checkIn)
+    const checkOutDate = new Date(checkOut)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    if (checkInDate < today) {
+      toast.error('Check-in date cannot be in the past')
+      return
+    }
+
+    if (checkOutDate <= checkInDate) {
+      toast.error('Check-out date must be after check-in date')
+      return
+    }
+
+    setBooking(true)
+
+    try {
+      const token = await getToken()
+      if (!token) {
+        toast.error('Authentication failed. Please sign in again.')
+        return
+      }
+
+      console.log('Creating booking with:', { room: id, checkInDate: checkIn, checkOutDate: checkOut, guests: guestCount })
+      
+      const response = await axios.post(
+        '/api/bookings/book',
+        {
+          room: id,
+          checkInDate: checkIn,
+          checkOutDate: checkOut,
+          guests: guestCount
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      )
+
+      if (response.data?.success) {
+        toast.success('Booking created successfully!')
+        // Navigate to my bookings page after a short delay
+        setTimeout(() => {
+          navigate('/my-bookings')
+        }, 1500)
+      } else {
+        toast.error(response.data?.message || 'Failed to create booking')
+      }
+    } catch (error) {
+      console.error('Error creating booking:', error)
+      console.error('Error response:', error.response?.data)
+      
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          'Failed to create booking. Please try again.'
+      toast.error(errorMessage)
+    } finally {
+      setBooking(false)
+    }
+  }
 
   if (!room) {
     return (
@@ -106,36 +282,74 @@ const RoomDetails = () => {
 
           {/* Booking Form */}
           <div className='bg-white border border-gray-200 rounded-2xl p-8 mb-12 shadow-sm'>
-            <div className='grid grid-cols-4 gap-6'>
-              <div className='col-span-1'>
+            <div className='grid grid-cols-1 md:grid-cols-4 gap-6'>
+              <div className='md:col-span-1'>
                 <label className='block text-sm font-medium text-gray-700 mb-3'>Check-In</label>
                 <input 
                   type='date' 
-                  className='w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-500 text-sm'
+                  value={checkIn}
+                  onChange={(e) => {
+                    setCheckIn(e.target.value)
+                    setIsAvailable(null) // Reset availability when dates change
+                  }}
+                  min={new Date().toISOString().split('T')[0]}
+                  className='w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
                 />
               </div>
               
-              <div className='col-span-1'>
+              <div className='md:col-span-1'>
                 <label className='block text-sm font-medium text-gray-700 mb-3'>Check-Out</label>
                 <input 
                   type='date' 
-                  className='w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-500 text-sm'
+                  value={checkOut}
+                  onChange={(e) => {
+                    setCheckOut(e.target.value)
+                    setIsAvailable(null) // Reset availability when dates change
+                  }}
+                  min={checkIn || new Date().toISOString().split('T')[0]}
+                  className='w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
                 />
               </div>
 
-              <div className='col-span-1'>
+              <div className='md:col-span-1'>
                 <label className='block text-sm font-medium text-gray-700 mb-3'>Guests</label>
                 <input 
-                  type='number' 
-                  value='0'
-                  className='w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-500 text-sm'
+                  type='number'
+                  min='1'
+                  value={guestCount}
+                  onChange={(e) => setGuestCount(Math.max(1, Number(e.target.value)))}
+                  className='w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
                 />
               </div>
 
-              <div className='col-span-1 flex items-end'>
-                <button className='w-full bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors'>
-                  Check Availability
+              <div className='md:col-span-1 flex flex-col gap-2'>
+                <button 
+                  type='button'
+                  onClick={handleCheckAvailability}
+                  disabled={checkingAvailability || !checkIn || !checkOut}
+                  className='w-full bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed'
+                >
+                  {checkingAvailability ? 'Checking...' : 'Check Availability'}
                 </button>
+                {isAvailable !== null && (
+                  <>
+                    <div className={`text-xs text-center px-2 py-1 rounded font-medium ${
+                      isAvailable ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {isAvailable ? '✓ Available' : '✗ Not Available'}
+                    </div>
+                    {isAvailable && (
+                      <button
+                        type='button'
+                        onClick={handleBookNow}
+                        disabled={booking}
+                        className='w-full bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed mt-2'
+                      >
+                        {booking ? 'Booking...' : 'Book Now'}
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -1,8 +1,9 @@
-import React from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useMemo, useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { roomsDummyData, facilityIcons } from '../assets/assets'
 import { assets } from '../assets/assets'
 import StarRating from '../components/StarRating'
+import { useAppContext } from '../context/AppContext'
 
 const CheckBox = ({label, selected = false, onChange = () => {}}) => {
   return (
@@ -33,10 +34,43 @@ const RadioButton = ({label, selected = false, onChange = () => {}}) => {
 
 const AllRooms = () => {
   const navigate = useNavigate()
+  const { axios } = useAppContext()
+  const [searchParams] = useSearchParams()
   const [openFilters, setOpenFilters] = React.useState(false)
   const [selectedRoomTypes, setSelectedRoomTypes] = React.useState([])
   const [selectedPriceRanges, setSelectedPriceRanges] = React.useState([])
   const [selectedSortOption, setSelectedSortOption] = React.useState(null)
+  const [rooms, setRooms] = useState([])
+  const [loading, setLoading] = useState(true)
+  
+  // Get search parameters from URL
+  const searchDestination = searchParams.get('destination') || ''
+  const searchCheckIn = searchParams.get('checkIn') || ''
+  const searchCheckOut = searchParams.get('checkOut') || ''
+  const searchGuests = searchParams.get('guests') || ''
+
+  // Fetch rooms from API
+  useEffect(() => {
+    const fetchRooms = async () => {
+      setLoading(true)
+      try {
+        const response = await axios.get('/api/rooms')
+        if (response.data?.success && response.data.rooms) {
+          setRooms(response.data.rooms)
+        } else {
+          // Fallback to dummy data
+          setRooms(roomsDummyData)
+        }
+      } catch (error) {
+        console.error('Error fetching rooms:', error)
+        // Fallback to dummy data
+        setRooms(roomsDummyData)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchRooms()
+  }, [axios])
 
   const roomTypes = [
     "Single Bed",
@@ -57,6 +91,68 @@ const AllRooms = () => {
     "Price High to Low",
     "Newest First"
   ]
+
+  // Parse price range string to min/max
+  const parsePriceRange = (rangeStr) => {
+    const match = rangeStr.match(/(\d+)\s+to\s+(\d+)/)
+    if (match) {
+      return { min: parseInt(match[1]), max: parseInt(match[2]) }
+    }
+    return null
+  }
+
+  // Filter and sort rooms
+  const filteredAndSortedRooms = useMemo(() => {
+    let filtered = [...rooms]
+
+    // Filter by search destination (city)
+    if (searchDestination) {
+      filtered = filtered.filter(room => 
+        room.hotel.city.toLowerCase().includes(searchDestination.toLowerCase()) ||
+        room.hotel.name.toLowerCase().includes(searchDestination.toLowerCase())
+      )
+    }
+
+    // Filter by room type
+    if (selectedRoomTypes.length > 0) {
+      filtered = filtered.filter(room => 
+        selectedRoomTypes.includes(room.roomType)
+      )
+    }
+
+    // Filter by price range
+    if (selectedPriceRanges.length > 0) {
+      const priceFilters = selectedPriceRanges.map(range => {
+        // Remove "$ " prefix if present
+        const cleanRange = range.replace(/^\$\s*/, '')
+        return parsePriceRange(cleanRange)
+      }).filter(Boolean)
+
+      filtered = filtered.filter(room => {
+        return priceFilters.some(({ min, max }) => 
+          room.pricePerNight >= min && room.pricePerNight <= max
+        )
+      })
+    }
+
+    // Sort rooms
+    if (selectedSortOption) {
+      filtered.sort((a, b) => {
+        switch (selectedSortOption) {
+          case "Price Low to High":
+            return a.pricePerNight - b.pricePerNight
+          case "Price High to Low":
+            return b.pricePerNight - a.pricePerNight
+          case "Newest First":
+            return new Date(b.createdAt) - new Date(a.createdAt)
+          default:
+            return 0
+        }
+      })
+    }
+
+    return filtered
+  }, [rooms, selectedRoomTypes, selectedPriceRanges, selectedSortOption, searchDestination])
 
   const handleRoomTypeChange = (label) => {
     if (selectedRoomTypes.includes(label)) {
@@ -97,13 +193,30 @@ const AllRooms = () => {
         <p className='text-gray-400 text-base md:text-lg max-w-3xl leading-relaxed'>
           Take advantage of our limited-time offers and special packages to enhance your stay and create unforgettable memories.
         </p>
+        <p className='text-gray-600 text-sm mt-4'>
+          {loading ? 'Loading rooms...' : `Showing ${filteredAndSortedRooms.length} of ${rooms.length} rooms`}
+          {(selectedRoomTypes.length > 0 || selectedPriceRanges.length > 0 || selectedSortOption || searchDestination) && (
+            <span className='text-gray-500'> (filtered)</span>
+          )}
+          {searchDestination && (
+            <span className='text-gray-500 ml-2'>• Destination: {searchDestination}</span>
+          )}
+          {searchCheckIn && searchCheckOut && (
+            <span className='text-gray-500 ml-2'>• {new Date(searchCheckIn).toLocaleDateString()} - {new Date(searchCheckOut).toLocaleDateString()}</span>
+          )}
+        </p>
       </div>
 
       {/* Main Content - Rooms List and Filters */}
       <div className='flex flex-col lg:flex-row gap-8'>
         {/* Rooms List */}
         <div className='flex-1 flex flex-col gap-16'>
-          {roomsDummyData.map((room) => (
+          {filteredAndSortedRooms.length === 0 ? (
+            <p className='text-gray-500 text-center py-8'>
+              No rooms match your filters. Try adjusting your search criteria.
+            </p>
+          ) : (
+            filteredAndSortedRooms.map((room) => (
             <div 
               key={room._id} 
               className='flex flex-col md:flex-row items-start gap-6 border-b border-gray-200 pb-16 last:border-0 cursor-pointer group'
@@ -152,7 +265,8 @@ const AllRooms = () => {
                 </p>
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Filters Sidebar */}
