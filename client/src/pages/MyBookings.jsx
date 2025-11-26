@@ -49,6 +49,17 @@ const MyBookings = () => {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [selectedBooking, setSelectedBooking] = useState(null)
+  const [paymentMethod, setPaymentMethod] = useState('gcash')
+  const [processingPayment, setProcessingPayment] = useState(false)
+  const [paymentDetails, setPaymentDetails] = useState({
+    gcashName: '',
+    gcashNumber: '',
+    gcashReference: '',
+    paypalEmail: '',
+    paypalTransactionId: ''
+  })
 
   // Format date to readable string
   const formatDate = (dateString) => {
@@ -119,6 +130,76 @@ const MyBookings = () => {
     fetchBookings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSignedIn])
+
+  const openPaymentModal = (booking) => {
+    setSelectedBooking(booking)
+    setPaymentMethod('gcash')
+    setPaymentDetails({
+      gcashName: '',
+      gcashNumber: '',
+      gcashReference: '',
+      paypalEmail: '',
+      paypalTransactionId: ''
+    })
+    setShowPaymentModal(true)
+  }
+
+  const closePaymentModal = () => {
+    if (processingPayment) return
+    setShowPaymentModal(false)
+    setSelectedBooking(null)
+  }
+
+  const handlePaymentDetailChange = (field, value) => {
+    setPaymentDetails((prev) => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handleConfirmPayment = async () => {
+    if (!selectedBooking) return
+
+    if (paymentMethod === 'gcash') {
+      if (!paymentDetails.gcashName.trim() || !paymentDetails.gcashNumber.trim() || !paymentDetails.gcashReference.trim()) {
+        toast.error('Please fill out all GCash payment details.')
+        return
+      }
+    } else if (paymentMethod === 'paypal') {
+      if (!paymentDetails.paypalEmail.trim() || !paymentDetails.paypalTransactionId.trim()) {
+        toast.error('Please provide your PayPal email and transaction ID.')
+        return
+      }
+    }
+
+    try {
+      setProcessingPayment(true)
+
+      // In a real integration you'd redirect to a payment gateway here.
+      // For now we simulate success after a short delay.
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      setBookings((prev) =>
+        prev.map((booking) =>
+          booking.id === selectedBooking.id
+            ? { ...booking, status: 'Paid' }
+            : booking
+        )
+      )
+
+      toast.success(
+        paymentMethod === 'gcash'
+          ? 'GCash payment recorded successfully.'
+          : 'PayPal payment recorded successfully.'
+      )
+      closePaymentModal()
+    } catch (err) {
+      console.error('Payment simulation error:', err)
+      toast.error('Failed to record payment. Please try again.')
+    } finally {
+      setProcessingPayment(false)
+    }
+  }
 
   // Use fetched bookings
   const displayBookings = bookings
@@ -214,7 +295,10 @@ const MyBookings = () => {
                 </span>
               </div>
               {booking.status === 'Unpaid' && (
-                <button className='px-4 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50 transition-colors'>
+                <button
+                  onClick={() => openPaymentModal(booking)}
+                  className='px-4 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50 transition-colors'
+                >
                   Pay Now
                 </button>
               )}
@@ -226,6 +310,137 @@ const MyBookings = () => {
         )}
 
       </div>
+
+      {showPaymentModal && selectedBooking && (
+        <div className='fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4' onClick={closePaymentModal}>
+          <div
+            className='bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 relative'
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={closePaymentModal}
+              className='absolute top-4 right-4 text-gray-400 hover:text-gray-600'
+              aria-label='Close payment modal'
+            >
+              ✕
+            </button>
+
+            <h3 className='text-2xl font-semibold mb-2'>Choose Payment Method</h3>
+            <p className='text-sm text-gray-500 mb-6'>
+              Complete the payment for <span className='font-medium'>{selectedBooking.hotel}</span> ({selectedBooking.roomType})
+            </p>
+
+            <div className='space-y-4'>
+              <label className={`flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition ${paymentMethod === 'gcash' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'}`}>
+                <input
+                  type='radio'
+                  name='payment-method'
+                  value='gcash'
+                  checked={paymentMethod === 'gcash'}
+                  onChange={() => setPaymentMethod('gcash')}
+                  className='mt-1 accent-indigo-600'
+                />
+                <div>
+                  <p className='font-semibold text-lg'>GCash</p>
+                  <p className='text-sm text-gray-500'>Pay using your GCash mobile wallet. Send payment to <span className='font-medium'>0917-123-4567</span> and upload your reference code.</p>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-4 p-4 border rounded-xl cursor-pointer transition ${paymentMethod === 'paypal' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200'}`}>
+                <input
+                  type='radio'
+                  name='payment-method'
+                  value='paypal'
+                  checked={paymentMethod === 'paypal'}
+                  onChange={() => setPaymentMethod('paypal')}
+                  className='mt-1 accent-indigo-600'
+                />
+                <div>
+                  <p className='font-semibold text-lg'>PayPal</p>
+                  <p className='text-sm text-gray-500'>You will be redirected to PayPal to complete the payment. Use billing email <span className='font-medium'>payments@hotelbooking.com</span>.</p>
+                </div>
+              </label>
+            </div>
+
+            {paymentMethod === 'gcash' && (
+              <div className='mt-6 space-y-3'>
+                <div>
+                  <label className='text-sm font-medium text-gray-600'>GCash Account Name</label>
+                  <input
+                    type='text'
+                    value={paymentDetails.gcashName}
+                    onChange={(e) => handlePaymentDetailChange('gcashName', e.target.value)}
+                    placeholder='e.g. Juan Dela Cruz'
+                    className='mt-1 w-full border border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-500'
+                  />
+                </div>
+                <div>
+                  <label className='text-sm font-medium text-gray-600'>GCash Number</label>
+                  <input
+                    type='text'
+                    value={paymentDetails.gcashNumber}
+                    onChange={(e) => handlePaymentDetailChange('gcashNumber', e.target.value)}
+                    placeholder='09XX XXX XXXX'
+                    className='mt-1 w-full border border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-500'
+                  />
+                </div>
+                <div>
+                  <label className='text-sm font-medium text-gray-600'>Reference Code</label>
+                  <input
+                    type='text'
+                    value={paymentDetails.gcashReference}
+                    onChange={(e) => handlePaymentDetailChange('gcashReference', e.target.value)}
+                    placeholder='Enter the 13-digit reference code'
+                    className='mt-1 w-full border border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-500'
+                  />
+                </div>
+              </div>
+            )}
+
+            {paymentMethod === 'paypal' && (
+              <div className='mt-6 space-y-3'>
+                <div>
+                  <label className='text-sm font-medium text-gray-600'>PayPal Email</label>
+                  <input
+                    type='email'
+                    value={paymentDetails.paypalEmail}
+                    onChange={(e) => handlePaymentDetailChange('paypalEmail', e.target.value)}
+                    placeholder='your-email@example.com'
+                    className='mt-1 w-full border border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-500'
+                  />
+                </div>
+                <div>
+                  <label className='text-sm font-medium text-gray-600'>PayPal Transaction ID</label>
+                  <input
+                    type='text'
+                    value={paymentDetails.paypalTransactionId}
+                    onChange={(e) => handlePaymentDetailChange('paypalTransactionId', e.target.value)}
+                    placeholder='Enter the transaction ID'
+                    className='mt-1 w-full border border-gray-200 rounded-lg px-4 py-2 outline-none focus:border-indigo-500'
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className='mt-6 flex flex-col gap-3'>
+              <button
+                onClick={handleConfirmPayment}
+                disabled={processingPayment}
+                className='w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                {processingPayment ? 'Processing...' : `Confirm ${paymentMethod === 'gcash' ? 'GCash' : 'PayPal'} Payment`}
+              </button>
+              <button
+                onClick={closePaymentModal}
+                disabled={processingPayment}
+                className='w-full border border-gray-300 text-gray-600 py-3 rounded-xl font-semibold hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed'
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
