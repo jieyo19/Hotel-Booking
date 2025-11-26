@@ -1,17 +1,17 @@
 import React, { createContext, useContext, useState } from 'react';
 import Axios from 'axios';
-import { useAuth } from '@clerk/clerk-react'; // IMPORTANT: Add this import
+import { useAuth } from '@clerk/clerk-react';
 
 const AppContext = createContext();
 
 export const AppContextProvider = ({ children }) => {
   const [showHotelReg, setShowHotelReg] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
-  const { getToken } = useAuth(); // IMPORTANT: Get the Clerk token function
+  const { getToken } = useAuth();
 
-  // Use environment variable for production
+  // FIXED: Changed VITE_API_URL to VITE_BACKEND_URL
   const axios = Axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
+    baseURL: import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000',
     headers: {
       'Content-Type': 'application/json',
     },
