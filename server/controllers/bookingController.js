@@ -1,4 +1,3 @@
-import transporter from "../configs/nodemailer.js";
 import Booking from "../models/Booking.js";
 import Hotel from "../models/hotelModel.js";
 import Room from "../models/Room.js";
@@ -167,68 +166,6 @@ export const createBooking = async (req, res) =>{
             checkOutDate: new Date(checkOutDate),
             totalPrice,
         })
-
-        // Send confirmation email
-        try {
-            const userEmail = req.user.email || req.user.username;
-            if (userEmail && process.env.GMAIL_USER) {
-                const checkInFormatted = new Date(checkInDate).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
-                const checkOutFormatted = new Date(checkOutDate).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                });
-
-                const mailOptions = {
-                    from: process.env.GMAIL_USER, // Your Gmail address
-                    to: userEmail,
-                    subject: 'Hotel Booking Confirmation',
-                    html: `
-                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                        <h2 style="color: #2563eb;">Booking Confirmation</h2>
-                        <p>Dear ${req.user.username || 'Guest'},</p>
-                        <p>Thank you for your booking! Your reservation has been confirmed.</p>
-                        <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                            <h3 style="margin-top: 0; color: #1f2937;">Booking Details</h3>
-                            <ul style="list-style: none; padding: 0;">
-                                <li style="margin: 10px 0;"><strong>Booking ID:</strong> ${booking._id}</li>
-                                <li style="margin: 10px 0;"><strong>Hotel Name:</strong> ${roomData.hotel.name}</li>
-                                <li style="margin: 10px 0;"><strong>Room Type:</strong> ${roomData.roomType}</li>
-                                <li style="margin: 10px 0;"><strong>Location:</strong> ${roomData.hotel.address}</li>
-                                <li style="margin: 10px 0;"><strong>Check-In:</strong> ${checkInFormatted}</li>
-                                <li style="margin: 10px 0;"><strong>Check-Out:</strong> ${checkOutFormatted}</li>
-                                <li style="margin: 10px 0;"><strong>Number of Nights:</strong> ${nights}</li>
-                                <li style="margin: 10px 0;"><strong>Guests:</strong> ${guests}</li>
-                                <li style="margin: 10px 0;"><strong>Total Amount:</strong> ${process.env.CURRENCY || '$'}${totalPrice.toFixed(2)}</li>
-                            </ul>
-                        </div>
-                        <p>We look forward to welcoming you!</p>
-                        <p>If you need to make any changes or have questions, please feel free to contact us.</p>
-                        <p style="margin-top: 30px; color: #6b7280; font-size: 12px;">This is an automated confirmation email. Please do not reply to this email.</p>
-                    </div>
-                    `
-                };
-
-                await transporter.sendMail(mailOptions);
-                console.log('Confirmation email sent successfully to:', userEmail);
-            } else {
-                console.warn('Email not sent: Missing user email or Gmail configuration');
-            }
-        } catch (emailError) {
-            // Don't fail the booking if email fails - just log it
-            console.error('Error sending confirmation email:', emailError);
-            console.error('Email error details:', {
-                message: emailError.message,
-                code: emailError.code,
-                response: emailError.response
-            });
-        }
 
         console.log('Booking created successfully:', booking._id);
         res.json({ success: true, message: "Booking created successfully", bookingId: booking._id })

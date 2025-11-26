@@ -1,26 +1,44 @@
 import React, { createContext, useContext, useState } from 'react';
 import Axios from 'axios';
+import { useAuth } from '@clerk/clerk-react'; // IMPORTANT: Add this import
 
 const AppContext = createContext();
 
 export const AppContextProvider = ({ children }) => {
   const [showHotelReg, setShowHotelReg] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const { getToken } = useAuth(); // IMPORTANT: Get the Clerk token function
 
-  // FIXED: Direct URL - no environment variable needed
+  // Use environment variable for production
   const axios = Axios.create({
-    baseURL: 'http://localhost:3000',  // ← Changed this line!
+    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
     headers: {
       'Content-Type': 'application/json',
     },
-    withCredentials: true  // ← Changed to true for better authentication
+    withCredentials: true
   });
 
-  // Request interceptor for debugging
+  // Request interceptor - ADD CLERK TOKEN TO EVERY REQUEST
   axios.interceptors.request.use(
-    (config) => {
-      console.log('Making request to:', config.baseURL + config.url);
-      console.log('Request data:', config.data);
+    async (config) => {
+      try {
+        // Get the Clerk token
+        const token = await getToken();
+        
+        // Add it to the Authorization header
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+          console.log('✅ Token added to request');
+        } else {
+          console.log('⚠️ No token available - user may not be signed in');
+        }
+        
+        console.log('Making request to:', config.baseURL + config.url);
+        console.log('Request data:', config.data);
+      } catch (error) {
+        console.error('❌ Error getting token:', error);
+      }
+      
       return config;
     },
     (error) => {

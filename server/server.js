@@ -2,7 +2,7 @@ import express from "express"
 import "dotenv/config";
 import cors from "cors";
 import connectDB from "./configs/db.js";
-import { clerkMiddleware } from '@clerk/express'
+import { clerkMiddleware, requireAuth } from '@clerk/express'
 import clerkWebhooks from "./controllers/clerkWebhooks.js";
 import userRouter from "./routes/userRoutes.js";
 import hotelRouter from "./routes/hotelRoutes.js";
@@ -15,9 +15,27 @@ connectCloudinary();
 
 const app = express();
 
-// FIXED: CORS configuration with proper options
+// CORS configuration
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'], // Add your frontend URLs
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://quickstayjc.vercel.app'
+    ];
+    
+    if (!origin) return callback(null, true);
+    
+    if (origin && origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
   credentials: true
 }));
 
@@ -30,22 +48,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// Clerk middleware for authentication
+// Clerk middleware for authentication - IMPORTANT: This must come before routes
 app.use(clerkMiddleware());
 
-// API to listen to Clerk Webhooks (before other routes and auth)
+// Clerk webhooks (before auth requirement)
 app.use("/api/clerk", clerkWebhooks);
 
-// API Routes - These are now properly registered
+// API Routes
 app.use("/api/user", userRouter);
 app.use("/api/hotels", hotelRouter);
 app.use("/api/rooms", roomRouter);
 app.use("/api/bookings", bookingRouter);
 
-// Root route - This should be LAST
+// Root route
 app.get("/", (req, res) => res.send("API is working"));
 
-// ADDED: 404 handler for unmatched routes
+// 404 handler
 app.use((req, res) => {
   console.log(`404 - Route not found: ${req.method} ${req.path}`);
   res.status(404).json({
@@ -54,7 +72,7 @@ app.use((req, res) => {
   });
 });
 
-// ADDED: Global error handler
+// Global error handler
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err);
   res.status(500).json({
@@ -63,8 +81,13 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+// Export for Vercel
+export default app;
 
-app.listen(PORT, () =>
-  console.log(`Server running on port ${PORT}`)
-);
+// Only listen if not in production
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () =>
+    console.log(`Server running on port ${PORT}`)
+  );
+}
